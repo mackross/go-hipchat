@@ -27,6 +27,7 @@ const (
 	xmlPresence    = "<presence from='%s'><show>%s</show></presence>"
 	xmlMUCPresence = "<presence id='%s' to='%s' from='%s'><x xmlns='%s'/></presence>"
 	xmlMUCMessage  = "<message from='%s' id='%s' to='%s' type='groupchat'><body>%s</body></message>"
+	xmlMessage     = "<message from='%s' id='%s' to='%s' type='chat'><body>%s</body></message>"
 )
 
 type required struct{}
@@ -136,6 +137,9 @@ func (c *Conn) MUCPresence(roomId, jid string) {
 
 func (c *Conn) MUCSend(to, from, body string) {
 	fmt.Fprintf(c.outgoing, xmlMUCMessage, from, id(), to, html.EscapeString(body))
+}
+func (c *Conn) Send(to, from, body string) {
+	fmt.Fprintf(c.outgoing, xmlMessage, from, id(), to, html.EscapeString(body))
 }
 
 func (c *Conn) Roster(from, to string) {
