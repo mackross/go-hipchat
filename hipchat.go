@@ -2,7 +2,6 @@ package hipchat
 
 import (
 	"errors"
-	"fmt"
 	"github.com/mackross/hipchat/xmpp"
 	"strings"
 	"time"
@@ -27,14 +26,16 @@ type Client struct {
 	receivedUsers   chan []*User
 	receivedRooms   chan []*Room
 	receivedMessage chan *Message
+	onConnect       chan bool
 }
 
 // A Message represents a message received from HipChat.
 type Message struct {
-	From        string
-	To          string
-	Body        string
-	MentionName string
+	ID   string
+	From string
+	To   string
+	Body string
+	Type string
 }
 
 // A User represents a member of the HipChat service.
@@ -54,7 +55,6 @@ type Room struct {
 // NewClient creates a new Client connection from the user name, password and
 // resource passed to it.
 func NewClient(user, pass, resource string) (*Client, error) {
-	connection, err := xmpp.Dial(host)
 
 	c := &Client{
 		Username: user,
@@ -63,24 +63,36 @@ func NewClient(user, pass, resource string) (*Client, error) {
 		Id:       user + "@" + host,
 
 		// private
-		connection:      connection,
 		mentionNames:    make(map[string]string),
 		receivedUsers:   make(chan []*User),
 		receivedRooms:   make(chan []*Room),
 		receivedMessage: make(chan *Message),
+		onConnect:       make(chan bool),
 	}
 
+	err := c.connect()
+	return c, err
+}
+
+func (c *Client) connect() error {
+	connection, err := xmpp.Dial(host)
+	c.connection = connection
 	if err != nil {
-		return c, err
+		return err
 	}
-
 	err = c.authenticate()
 	if err != nil {
-		return c, err
+		return err
 	}
-
 	go c.listen()
-	return c, nil
+	go func() { c.onConnect <- true }()
+	return nil
+}
+
+// OnConnect returns a read-only channel of booleans and sends true
+// when ever the client connects or reconnects.
+func (c *Client) OnConnect() <-chan bool {
+	return c.onConnect
 }
 
 // Messages returns a read-only channel of Message structs. After joining a
@@ -181,12 +193,26 @@ func (c *Client) listen() {
 	for {
 		element, err := c.connection.Next()
 		if err != nil {
-			return
+			for m := 0; m < 5; m++ {
+				for i := 1; i < 11; i++ {
+					time.Sleep(time.Duration(i) * time.Second)
+					err = c.connect()
+					if err != nil {
+						goto Reconnected
+					}
+				}
+				time.Sleep(time.Duration(m) * time.Minute)
+			}
+			panic(err)
+		Reconnected:
+			continue
 		}
 
 		switch element.Name.Local + element.Name.Space {
 		case "iq" + xmpp.NsJabberClient: // rooms and rosters
+			//attr := xmpp.ToMap(element.Attr)
 			query := c.connection.Query()
+			//fmt.Printf("<%v: %#v\n>%v\n\n", element.Name.Local, attr, query)
 			switch query.XMLName.Space {
 			case xmpp.NsDisco:
 				items := make([]*Room, len(query.Items))
@@ -201,17 +227,29 @@ func (c *Client) listen() {
 				}
 				c.receivedUsers <- items
 			}
+		case "presence" + xmpp.NsJabberClient:
+			//attr := xmpp.ToMap(element.Attr)
+			//body := c.connection.Body()
+			//fmt.Printf("<%v: %#v\n>%v\n\n", element.Name.Local, attr, body)
 		case "message" + xmpp.NsJabberClient:
 			attr := xmpp.ToMap(element.Attr)
 			if attr["type"] != "groupchat" && attr["type"] != "chat" {
 				continue
 			}
 
-			fmt.Printf("%#v\n", attr)
+			// empty body indicates a toggle in typing status
+			body := c.connection.Body()
+			//fmt.Printf("<%v: %#v\n>%v\n\n", element.Name.Local, attr, body)
+			if len(body) == 0 {
+				continue
+			}
+
 			c.receivedMessage <- &Message{
+				ID:   attr["mid"],
+				Type: attr["type"],
 				From: attr["from"],
 				To:   attr["to"],
-				Body: c.connection.Body(),
+				Body: body,
 			}
 		}
 	}

@@ -106,6 +106,8 @@ func (c *Conn) Next() (xml.StartElement, error) {
 			}
 
 			return element, nil
+
+		default:
 		}
 	}
 	panic("unreachable")
