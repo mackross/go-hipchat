@@ -2,7 +2,7 @@ package hipchat
 
 import (
 	"errors"
-	"github.com/mackross/hipchat/xmpp"
+	"github.com/mackross/go-hipchat/xmpp"
 	"strings"
 	"time"
 )
