@@ -2,6 +2,7 @@ package hipchat
 
 import (
 	"errors"
+	"fmt"
 	"github.com/mackross/go-hipchat/xmpp"
 	"strings"
 	"time"
@@ -197,8 +198,10 @@ func (c *Client) listen() {
 				for i := 1; i < 11; i++ {
 					time.Sleep(time.Duration(i) * time.Second)
 					err = c.connect()
-					if err != nil {
+					if err == nil {
 						goto Reconnected
+					} else {
+						fmt.Println("Unable to connect err:", err)
 					}
 				}
 				time.Sleep(time.Duration(m) * time.Minute)
